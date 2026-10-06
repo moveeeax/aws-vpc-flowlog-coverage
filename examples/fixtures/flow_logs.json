@@ -1,0 +1,48 @@
+[
+  {
+    "FlowLogId": "fl-0aaa000000000001",
+    "ResourceId": "vpc-0aa1111111111111a",
+    "FlowLogStatus": "ACTIVE",
+    "DeliverLogsStatus": "SUCCESS",
+    "TrafficType": "ALL",
+    "LogDestinationType": "s3",
+    "LogDestination": "arn:aws:s3:::acme-flowlogs/prod-core/"
+  },
+  {
+    "FlowLogId": "fl-0bbb000000000002",
+    "ResourceId": "vpc-0bb2222222222222b",
+    "FlowLogStatus": "FAILED",
+    "DeliverLogsStatus": "FAILED",
+    "DeliverLogsErrorMessage": "Access error: the IAM role flowlogs-delivery does not exist or cannot be assumed",
+    "TrafficType": "ALL",
+    "LogDestinationType": "cloud-watch-logs",
+    "LogDestination": "arn:aws:logs:eu-west-1:111122223333:log-group:/vpc/flowlogs"
+  },
+  {
+    "FlowLogId": "fl-0ddd000000000003",
+    "ResourceId": "subnet-0d01",
+    "FlowLogStatus": "ACTIVE",
+    "DeliverLogsStatus": "SUCCESS",
+    "TrafficType": "ALL",
+    "LogDestinationType": "s3",
+    "LogDestination": "arn:aws:s3:::acme-flowlogs/sandbox/"
+  },
+  {
+    "FlowLogId": "fl-0eee000000000004",
+    "ResourceId": "vpc-0ee5555555555555e",
+    "FlowLogStatus": "ACTIVE",
+    "DeliverLogsStatus": "SUCCESS",
+    "TrafficType": "REJECT",
+    "LogDestinationType": "s3",
+    "LogDestination": "arn:aws:s3:::acme-flowlogs/edge/"
+  },
+  {
+    "FlowLogId": "fl-0fff000000000005",
+    "ResourceId": "eni-0f0f0f0f0f0f0f0f0",
+    "FlowLogStatus": "ACTIVE",
+    "DeliverLogsStatus": "SUCCESS",
+    "TrafficType": "ALL",
+    "LogDestinationType": "s3",
+    "LogDestination": "arn:aws:s3:::acme-flowlogs/one-box/"
+  }
+]

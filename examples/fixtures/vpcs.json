@@ -1,0 +1,27 @@
+[
+  {
+    "VpcId": "vpc-0aa1111111111111a",
+    "CidrBlock": "10.0.0.0/16",
+    "Tags": [{ "Key": "Name", "Value": "prod-core" }]
+  },
+  {
+    "VpcId": "vpc-0bb2222222222222b",
+    "CidrBlock": "10.1.0.0/16",
+    "Tags": [{ "Key": "Name", "Value": "prod-data" }]
+  },
+  {
+    "VpcId": "vpc-0cc3333333333333c",
+    "CidrBlock": "10.2.0.0/16",
+    "Tags": [{ "Key": "Name", "Value": "staging" }]
+  },
+  {
+    "VpcId": "vpc-0dd4444444444444d",
+    "CidrBlock": "10.3.0.0/16",
+    "Tags": [{ "Key": "Name", "Value": "sandbox" }]
+  },
+  {
+    "VpcId": "vpc-0ee5555555555555e",
+    "CidrBlock": "10.4.0.0/16",
+    "Tags": [{ "Key": "Name", "Value": "edge" }]
+  }
+]

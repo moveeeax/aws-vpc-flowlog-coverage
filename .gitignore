@@ -1,0 +1,21 @@
+# Virtualenvs
+/.venv/
+/venv/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Build artifacts (anchored to the repo root so no source dir is caught)
+/build/
+/dist/
+/*.egg-info/
+*.egg-info/
+
+# Fixtures and tests are part of the suite and are always tracked.
+# Keep these negations narrow: a bare `!tests/**` also un-ignores
+# tests/__pycache__ and commits .pyc files.
+!examples/fixtures/**
+!tests/*.py
