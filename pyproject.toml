@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aws-vpc-flowlog-coverage"
-version = "0.1.0"
+version = "0.2.0"
 description = "Audit VPC Flow Log coverage: missing logs, logs that stopped delivering, and subnet-only configs that leave the rest of the VPC dark."
 readme = "README.md"
 requires-python = ">=3.11"
