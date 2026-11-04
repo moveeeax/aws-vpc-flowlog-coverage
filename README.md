@@ -1,7 +1,7 @@
 # aws-vpc-flowlog-coverage
 
 [![ci](https://github.com/moveeeax/aws-vpc-flowlog-coverage/actions/workflows/ci.yml/badge.svg)](https://github.com/moveeeax/aws-vpc-flowlog-coverage/actions/workflows/ci.yml)
-[![python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
+[![python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Find the VPCs whose traffic nobody is recording — including the ones that have a flow log that quietly stopped delivering.
