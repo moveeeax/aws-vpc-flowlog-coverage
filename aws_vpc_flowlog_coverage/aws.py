@@ -7,7 +7,7 @@ ec2:DescribeSubnets, ec2:DescribeFlowLogs.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -55,6 +55,8 @@ def scan(
     required_traffic_type: str = "ALL",
     concurrency: int = 8,
     client_factory=None,
+    required_fields: Sequence[str] = (),
+    max_interval: Optional[int] = None,
 ) -> ScanResult:
     """Audit every region concurrently and merge the findings.
 
@@ -85,6 +87,8 @@ def scan(
                     subnets,
                     flow_logs,
                     required_traffic_type=required_traffic_type,
+                    required_fields=required_fields,
+                    max_interval=max_interval,
                 )
             )
             result.unattributed_eni_logs.extend(

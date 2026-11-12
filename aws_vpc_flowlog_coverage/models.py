@@ -10,6 +10,7 @@ MISSING = "missing"
 BROKEN = "broken"
 PARTIAL = "partial"
 TRAFFIC_TYPE = "traffic-type"
+FORMAT = "format"
 
 # `broken` sits at the same rank as `missing` on purpose: a flow log stuck in
 # FAILED delivers exactly as many packets to your bucket as no flow log at all.
@@ -20,11 +21,12 @@ SEVERITY = {
     BROKEN: 3,
     PARTIAL: 2,
     TRAFFIC_TYPE: 1,
+    FORMAT: 1,
 }
 
 # Tie-break for worst(): `missing` and `broken` share a severity rank, so the
 # reported headline kind needs a stable order of its own.
-KIND_PRIORITY = [MISSING, BROKEN, PARTIAL, TRAFFIC_TYPE]
+KIND_PRIORITY = [MISSING, BROKEN, PARTIAL, TRAFFIC_TYPE, FORMAT]
 
 # --fail-on thresholds -> minimum severity rank that trips a non-zero exit.
 FAIL_ON = {
@@ -49,6 +51,8 @@ class Finding:
     traffic_type: Optional[str] = None
     uncovered_subnets: List[str] = field(default_factory=list)
     covered_subnets: List[str] = field(default_factory=list)
+    missing_fields: List[str] = field(default_factory=list)
+    max_aggregation_interval: Optional[int] = None
 
     @property
     def severity(self) -> int:
@@ -74,6 +78,10 @@ class Finding:
         if self.kind == PARTIAL:
             out["uncoveredSubnets"] = list(self.uncovered_subnets)
             out["coveredSubnets"] = list(self.covered_subnets)
+        if self.kind == FORMAT:
+            out["missingFields"] = list(self.missing_fields)
+            if self.max_aggregation_interval is not None:
+                out["maxAggregationInterval"] = self.max_aggregation_interval
         return out
 
 

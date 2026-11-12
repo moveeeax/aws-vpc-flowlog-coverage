@@ -15,7 +15,7 @@ import pytest
 from botocore.stub import Stubber
 
 from aws_vpc_flowlog_coverage.aws import enabled_regions, fetch_region, scan
-from aws_vpc_flowlog_coverage.models import MISSING
+from aws_vpc_flowlog_coverage.models import FORMAT, MISSING
 
 FIXTURES = pathlib.Path(__file__).resolve().parent.parent / "examples" / "fixtures"
 REGION = "eu-west-1"
@@ -117,6 +117,24 @@ class TestScan:
         assert result.worst() == MISSING
         assert result.errors == []
         assert result.unattributed_eni_logs == ["eu-west-1/fl-0fff000000000005"]
+
+    def test_format_checks_are_passed_to_the_engine(self, session):
+        client = ec2(session)
+        with Stubber(client) as stubber:
+            stub_region(
+                stubber,
+                vpcs=load("vpcs.json"),
+                subnets=load("subnets.json"),
+                flow_logs=load("flow_logs.json"),
+            )
+            result = scan(
+                session,
+                [REGION],
+                client_factory=lambda r: client,
+                required_fields=["tcp-flags"],
+                max_interval=60,
+            )
+        assert result.by_kind()[FORMAT] == 2
 
     def test_multiple_regions_are_merged_and_tagged(self, session):
         clients = {}

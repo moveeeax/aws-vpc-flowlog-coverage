@@ -8,11 +8,42 @@ without an AWS account.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .models import BROKEN, MISSING, PARTIAL, TRAFFIC_TYPE, Finding
+from .models import BROKEN, FORMAT, MISSING, PARTIAL, TRAFFIC_TYPE, Finding
 
 ACTIVE = "ACTIVE"
+
+# What AWS writes when CreateFlowLogs is called without LogFormat (the version 2
+# record). DescribeFlowLogs returns the format string even for such logs; this is
+# only the fallback for a response that leaves the key out.
+DEFAULT_LOG_FORMAT = (
+    "${version} ${account-id} ${interface-id} ${srcaddr} ${dstaddr} ${srcport} "
+    "${dstport} ${protocol} ${packets} ${bytes} ${start} ${end} ${action} "
+    "${log-status}"
+)
+
+# CreateFlowLogs default for MaxAggregationInterval, in seconds.
+DEFAULT_MAX_AGGREGATION_INTERVAL = 600
+
+# Field presets for --format-profile. `ir` is what an incident responder asks
+# of a record and the default format cannot answer: which VPC and subnet, the
+# real peers behind a NAT gateway or load balancer, the TCP handshake, and
+# which way the flow went.
+FORMAT_PROFILES: Dict[str, List[str]] = {
+    "none": [],
+    "ir": [
+        "vpc-id",
+        "subnet-id",
+        "pkt-srcaddr",
+        "pkt-dstaddr",
+        "tcp-flags",
+        "flow-direction",
+    ],
+}
+
+_FIELD_TOKEN = re.compile(r"\$\{([^}\s]+)\}")
 
 
 def _tag_name(tags: Optional[Iterable[Dict[str, str]]]) -> str:
@@ -61,6 +92,35 @@ def broken_reason(flow_log: Dict[str, Any]) -> str:
     if err:
         reason = "{0}: {1}".format(reason, err)
     return reason
+
+
+def log_fields(flow_log: Dict[str, Any]) -> List[str]:
+    """Field ids in the log's LogFormat, in record order.
+
+    The format is a space-separated list of `${field-id}` tokens. A response
+    without LogFormat is read as the default version 2 format.
+    """
+    fmt = flow_log.get("LogFormat")
+    if fmt is None:
+        fmt = DEFAULT_LOG_FORMAT
+    return _FIELD_TOKEN.findall(fmt)
+
+
+def missing_fields(flow_log: Dict[str, Any], required: Sequence[str]) -> List[str]:
+    """The required fields this log's records do not carry, in `required` order."""
+    present = set(log_fields(flow_log))
+    out: List[str] = []
+    for name in required:
+        if name not in present and name not in out:
+            out.append(name)
+    return out
+
+
+def aggregation_interval(flow_log: Dict[str, Any]) -> int:
+    value = flow_log.get("MaxAggregationInterval")
+    if value is None:
+        return DEFAULT_MAX_AGGREGATION_INTERVAL
+    return int(value)
 
 
 def unattributed_eni_logs(
@@ -152,14 +212,69 @@ def _traffic_findings(
     return out
 
 
+def _format_findings(
+    region: str,
+    vpc_meta: Tuple[str, str, str],
+    active: Sequence[Dict[str, Any]],
+    required_fields: Sequence[str],
+    max_interval: Optional[int],
+) -> List[Finding]:
+    """One `format` finding per active log that lacks a field or aggregates too long.
+
+    Both checks read values DescribeFlowLogs already returned, so they cost no
+    extra API call. A log can pass coverage and still be unable to answer the
+    question asked of it mid-incident.
+    """
+    vpc_id, cidr, name = vpc_meta
+    if not required_fields and max_interval is None:
+        return []
+    out: List[Finding] = []
+    for log in sorted(active, key=lambda l: l.get("FlowLogId", "")):
+        lacking = missing_fields(log, required_fields)
+        interval = aggregation_interval(log)
+        too_long = max_interval is not None and interval > max_interval
+        if not lacking and not too_long:
+            continue
+        bits = []
+        if lacking:
+            bits.append("log format lacks " + ", ".join(lacking))
+        if too_long:
+            bits.append(
+                "MaxAggregationInterval={0}s, at most {1}s required".format(
+                    interval, max_interval
+                )
+            )
+        out.append(
+            Finding(
+                region=region,
+                vpc_id=vpc_id,
+                vpc_cidr=cidr,
+                vpc_name=name,
+                kind=FORMAT,
+                flow_log_id=log.get("FlowLogId"),
+                flow_log_status=log.get("FlowLogStatus"),
+                missing_fields=lacking,
+                max_aggregation_interval=interval if too_long else None,
+                detail="; ".join(bits),
+            )
+        )
+    return out
+
+
 def analyze_region(
     region: str,
     vpcs: Sequence[Dict[str, Any]],
     subnets: Sequence[Dict[str, Any]],
     flow_logs: Sequence[Dict[str, Any]],
     required_traffic_type: str = "ALL",
+    required_fields: Sequence[str] = (),
+    max_interval: Optional[int] = None,
 ) -> List[Finding]:
-    """Join VPCs, subnets and flow logs into findings for one region."""
+    """Join VPCs, subnets and flow logs into findings for one region.
+
+    required_fields and max_interval switch on the `format` check; with the
+    defaults it is off.
+    """
     subnets_by_vpc = _index_subnets(subnets)
     logs_by_vpc = _index_flow_logs(flow_logs, subnets)
     findings: List[Finding] = []
@@ -248,5 +363,8 @@ def analyze_region(
                 )
 
         findings.extend(_traffic_findings(region, meta, active, required_traffic_type))
+        findings.extend(
+            _format_findings(region, meta, active, required_fields, max_interval)
+        )
 
     return findings

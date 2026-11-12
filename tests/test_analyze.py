@@ -5,13 +5,24 @@ from __future__ import annotations
 import pytest
 
 from aws_vpc_flowlog_coverage.analyze import (
+    DEFAULT_LOG_FORMAT,
+    FORMAT_PROFILES,
+    aggregation_interval,
     analyze_region,
     broken_reason,
     is_broken,
+    log_fields,
+    missing_fields,
     resource_scope,
     unattributed_eni_logs,
 )
-from aws_vpc_flowlog_coverage.models import BROKEN, MISSING, PARTIAL, TRAFFIC_TYPE
+from aws_vpc_flowlog_coverage.models import (
+    BROKEN,
+    FORMAT,
+    MISSING,
+    PARTIAL,
+    TRAFFIC_TYPE,
+)
 
 REGION = "eu-west-1"
 
@@ -247,6 +258,186 @@ class TestTrafficType:
             [flow_log("fl-1", "vpc-1", status="FAILED", traffic="REJECT")],
         )
         assert kinds(findings) == [BROKEN]
+
+
+IR = FORMAT_PROFILES["ir"]
+IR_FORMAT = DEFAULT_LOG_FORMAT + " " + " ".join("${" + f + "}" for f in IR)
+
+
+class TestFormat:
+    def test_default_format_lacks_every_ir_field(self):
+        findings = analyze_region(
+            REGION,
+            [vpc("vpc-1")],
+            [],
+            [flow_log("fl-1", "vpc-1", LogFormat=DEFAULT_LOG_FORMAT)],
+            required_fields=IR,
+        )
+        f = only(findings, FORMAT)
+        assert f.flow_log_id == "fl-1"
+        assert f.missing_fields == IR
+        assert "pkt-srcaddr" in f.detail
+        assert f.max_aggregation_interval is None
+
+    def test_custom_format_with_the_fields_is_clean(self):
+        findings = analyze_region(
+            REGION,
+            [vpc("vpc-1")],
+            [],
+            [flow_log("fl-1", "vpc-1", LogFormat=IR_FORMAT)],
+            required_fields=IR,
+        )
+        assert findings == []
+
+    def test_only_the_absent_fields_are_listed(self):
+        fmt = "${srcaddr} ${dstaddr} ${tcp-flags} ${pkt-srcaddr}"
+        findings = analyze_region(
+            REGION,
+            [vpc("vpc-1")],
+            [],
+            [flow_log("fl-1", "vpc-1", LogFormat=fmt)],
+            required_fields=["pkt-srcaddr", "pkt-dstaddr", "tcp-flags", "flow-direction"],
+        )
+        assert only(findings, FORMAT).missing_fields == ["pkt-dstaddr", "flow-direction"]
+
+    def test_missing_log_format_is_read_as_the_default(self):
+        findings = analyze_region(
+            REGION, [vpc("vpc-1")], [], [flow_log("fl-1", "vpc-1")], required_fields=IR
+        )
+        assert only(findings, FORMAT).missing_fields == IR
+
+    def test_off_by_default(self):
+        findings = analyze_region(
+            REGION,
+            [vpc("vpc-1")],
+            [],
+            [
+                flow_log(
+                    "fl-1",
+                    "vpc-1",
+                    LogFormat=DEFAULT_LOG_FORMAT,
+                    MaxAggregationInterval=600,
+                )
+            ],
+        )
+        assert findings == []
+
+    def test_long_aggregation_interval_is_reported(self):
+        findings = analyze_region(
+            REGION,
+            [vpc("vpc-1")],
+            [],
+            [flow_log("fl-1", "vpc-1", MaxAggregationInterval=600)],
+            max_interval=60,
+        )
+        f = only(findings, FORMAT)
+        assert f.missing_fields == []
+        assert f.max_aggregation_interval == 600
+        assert f.detail == "MaxAggregationInterval=600s, at most 60s required"
+
+    def test_interval_within_limit_is_clean(self):
+        findings = analyze_region(
+            REGION,
+            [vpc("vpc-1")],
+            [],
+            [flow_log("fl-1", "vpc-1", MaxAggregationInterval=60)],
+            max_interval=60,
+        )
+        assert findings == []
+
+    def test_missing_interval_is_read_as_the_600s_default(self):
+        findings = analyze_region(
+            REGION, [vpc("vpc-1")], [], [flow_log("fl-1", "vpc-1")], max_interval=60
+        )
+        assert only(findings, FORMAT).max_aggregation_interval == 600
+
+    def test_fields_and_interval_share_one_finding_per_log(self):
+        findings = analyze_region(
+            REGION,
+            [vpc("vpc-1")],
+            [],
+            [
+                flow_log(
+                    "fl-1",
+                    "vpc-1",
+                    LogFormat=DEFAULT_LOG_FORMAT,
+                    MaxAggregationInterval=600,
+                )
+            ],
+            required_fields=["tcp-flags"],
+            max_interval=60,
+        )
+        f = only(findings, FORMAT)
+        assert f.detail == (
+            "log format lacks tcp-flags; MaxAggregationInterval=600s, at most 60s required"
+        )
+
+    def test_each_active_log_is_checked(self):
+        findings = analyze_region(
+            REGION,
+            [vpc("vpc-1")],
+            [subnet("subnet-a", "vpc-1")],
+            [
+                flow_log("fl-2", "subnet-a", LogFormat=DEFAULT_LOG_FORMAT),
+                flow_log("fl-1", "vpc-1", LogFormat=DEFAULT_LOG_FORMAT),
+            ],
+            required_fields=["tcp-flags"],
+        )
+        assert [f.flow_log_id for f in findings if f.kind == FORMAT] == ["fl-1", "fl-2"]
+
+    def test_broken_log_format_is_not_double_reported(self):
+        findings = analyze_region(
+            REGION,
+            [vpc("vpc-1")],
+            [],
+            [flow_log("fl-1", "vpc-1", status="FAILED", LogFormat=DEFAULT_LOG_FORMAT)],
+            required_fields=IR,
+            max_interval=60,
+        )
+        assert kinds(findings) == [BROKEN]
+
+    def test_format_is_reported_alongside_traffic_type(self):
+        findings = analyze_region(
+            REGION,
+            [vpc("vpc-1")],
+            [],
+            [flow_log("fl-1", "vpc-1", traffic="REJECT", LogFormat=DEFAULT_LOG_FORMAT)],
+            required_fields=["tcp-flags"],
+        )
+        assert kinds(findings) == [TRAFFIC_TYPE, FORMAT]
+
+    def test_log_fields_parses_tokens_in_order(self):
+        log = {"LogFormat": "${version} ${pkt-srcaddr}  ${tcp-flags}"}
+        assert log_fields(log) == ["version", "pkt-srcaddr", "tcp-flags"]
+
+    def test_default_format_is_the_v2_record(self):
+        assert log_fields({}) == [
+            "version",
+            "account-id",
+            "interface-id",
+            "srcaddr",
+            "dstaddr",
+            "srcport",
+            "dstport",
+            "protocol",
+            "packets",
+            "bytes",
+            "start",
+            "end",
+            "action",
+            "log-status",
+        ]
+
+    def test_missing_fields_keeps_order_and_dedupes(self):
+        log = {"LogFormat": "${srcaddr}"}
+        assert missing_fields(log, ["tcp-flags", "srcaddr", "tcp-flags", "vpc-id"]) == [
+            "tcp-flags",
+            "vpc-id",
+        ]
+
+    def test_aggregation_interval_reads_the_value(self):
+        assert aggregation_interval({"MaxAggregationInterval": 60}) == 60
+        assert aggregation_interval({}) == 600
 
 
 class TestHelpers:

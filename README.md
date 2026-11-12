@@ -16,6 +16,7 @@ Flow logs answer "what talked to that host" after an incident, and they are enab
 | `broken` | a log exists but is not delivering (`FlowLogStatus != ACTIVE`, or a delivery error) |
 | `partial` | only subnet- or ENI-level logs; the uncovered subnet ids are listed |
 | `traffic-type` | the log captures `ACCEPT` or `REJECT` only, so half of every conversation is gone |
+| `format` | the log's `LogFormat` lacks a field you require, or `MaxAggregationInterval` is longer than you allow (opt-in, see below) |
 
 `broken` and `missing` share a severity on purpose: a log stuck in `FAILED` puts exactly as many packets in your bucket as no log at all. They stay separate findings because the fix differs — repair the delivery role, or create the log.
 
@@ -63,6 +64,24 @@ $ aws-vpc-flowlog-coverage --fail-on missing
 
 With no `--regions`, every enabled region is audited concurrently.
 
+### Record format
+
+A log in the default version 2 format is `ACTIVE` and `ALL` and still cannot say which subnet a flow came from, who the real peer behind a NAT gateway or load balancer was, or whether the TCP handshake completed. Ask for the fields you need:
+
+```console
+$ aws-vpc-flowlog-coverage --format-profile ir --max-interval 60
+...
+  FORMAT       vpc-0ee5555555555555e  10.4.0.0/16  edge
+               log format lacks vpc-id, subnet-id, pkt-srcaddr, pkt-dstaddr, tcp-flags, flow-direction; MaxAggregationInterval=600s, at most 60s required
+               flow log: fl-0eee000000000004
+```
+
+`--format-profile ir` requires `vpc-id`, `subnet-id`, `pkt-srcaddr`, `pkt-dstaddr`, `tcp-flags` and `flow-direction`. `--require-fields` adds your own (comma-separated, or a pasted `${a} ${b}` format string) on top of the profile. Field ids are checked for shape only, not against a list, so fields AWS adds later work without an update. The available fields are listed in [Flow log records](https://docs.aws.amazon.com/vpc/latest/userguide/flow-log-records.html).
+
+`--max-interval 60` flags every log whose `MaxAggregationInterval` is 600 seconds, the `CreateFlowLogs` default. On Nitro instances AWS aggregates at 60 seconds or less whatever the setting says, so the finding is about the configured value.
+
+The check is off unless one of these flags is set, it runs only on active logs (a broken log is already a `broken` finding), and it costs no extra API call or permission: both values come back in `DescribeFlowLogs`. A response without `LogFormat` or `MaxAggregationInterval` is read as the AWS default (the version 2 format, 600 seconds). Each log gets at most one `format` finding; JSON carries `missingFields` and, when the interval is the problem, `maxAggregationInterval`. `format` ranks with `traffic-type` at the lowest severity, so only `--fail-on any` gates on it.
+
 ### Flags
 
 | flag | default | what it does |
@@ -72,6 +91,9 @@ With no `--regions`, every enabled region is audited concurrently.
 | `--format` | `text` | `text` or `json` |
 | `--fail-on` | `none` | `none`, `missing` (missing/broken), `partial` (those plus partial), `any` |
 | `--traffic-type` | `ALL` | traffic type a log must capture to count as complete; `ANY` disables the check |
+| `--require-fields` | none | comma-separated record fields every active log's `LogFormat` must contain |
+| `--format-profile` | `none` | field preset merged with `--require-fields`; `ir` = `vpc-id,subnet-id,pkt-srcaddr,pkt-dstaddr,tcp-flags,flow-direction` |
+| `--max-interval` | not checked | `60` or `600`; the longest `MaxAggregationInterval` allowed |
 | `--concurrency` | `8` | parallel region workers |
 
 ### Exit codes
@@ -98,11 +120,12 @@ The engine in `aws_vpc_flowlog_coverage/analyze.py` is pure: it takes the lists 
 
 ## Try it without an AWS account
 
-`examples/fixtures/` holds real response shapes covering all four finding kinds:
+`examples/fixtures/` holds real response shapes covering all five finding kinds:
 
 ```console
 $ python3 examples/offline_demo.py
 $ python3 examples/offline_demo.py --format json
+$ python3 examples/offline_demo.py --format-profile ir --max-interval 60
 ```
 
 ## One limitation worth knowing

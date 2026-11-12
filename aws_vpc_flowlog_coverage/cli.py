@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from typing import List, Optional, Sequence
 
 from . import __version__
+from .analyze import FORMAT_PROFILES
 from .models import FAIL_ON, ScanResult
 
 EXIT_OK = 0
@@ -55,6 +57,36 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--require-fields",
+        type=parse_fields,
+        default=[],
+        metavar="FIELDS",
+        help=(
+            "comma-separated flow log record fields (e.g. pkt-srcaddr,tcp-flags) "
+            "every active log's LogFormat must contain; a log without one is a "
+            "`format` finding (default: none)"
+        ),
+    )
+    parser.add_argument(
+        "--format-profile",
+        choices=tuple(FORMAT_PROFILES),
+        default="none",
+        help=(
+            "preset of required fields, merged with --require-fields. "
+            "ir = {0} (default: none)".format(",".join(FORMAT_PROFILES["ir"]))
+        ),
+    )
+    parser.add_argument(
+        "--max-interval",
+        type=int,
+        choices=(60, 600),
+        default=None,
+        help=(
+            "maximum MaxAggregationInterval in seconds; a log aggregating "
+            "longer is a `format` finding (default: not checked)"
+        ),
+    )
+    parser.add_argument(
         "--concurrency",
         type=int,
         default=8,
@@ -66,6 +98,43 @@ def build_parser() -> argparse.ArgumentParser:
 
 def parse_regions(raw: str) -> List[str]:
     return [r.strip() for r in raw.split(",") if r.strip()]
+
+
+_FIELD_ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+def parse_fields(raw: str) -> List[str]:
+    """Field ids from `a,b` or `${a} ${b}`, so a LogFormat can be pasted as is.
+
+    Ids are checked for shape only (lowercase words joined by hyphens). AWS adds
+    fields over time, so a fixed list would reject the next one; the shape check
+    still catches `tcp_flags` and `TcpFlags`, which would never match.
+    """
+    out: List[str] = []
+    for token in re.split(r"[,\s]+", raw):
+        name = token.strip()
+        if name.startswith("${") and name.endswith("}"):
+            name = name[2:-1]
+        if not name:
+            continue
+        if not _FIELD_ID.match(name):
+            raise argparse.ArgumentTypeError(
+                "{0!r} is not a flow log field id (expected e.g. pkt-srcaddr)".format(
+                    token
+                )
+            )
+        if name not in out:
+            out.append(name)
+    return out
+
+
+def required_fields(profile: str, extra: Sequence[str]) -> List[str]:
+    """Profile fields first, then --require-fields, without duplicates."""
+    out: List[str] = []
+    for name in list(FORMAT_PROFILES[profile]) + list(extra):
+        if name not in out:
+            out.append(name)
+    return out
 
 
 def exit_code(result: ScanResult, fail_on: str) -> int:
@@ -112,6 +181,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         regions,
         required_traffic_type=args.traffic_type,
         concurrency=args.concurrency,
+        required_fields=required_fields(args.format_profile, args.require_fields),
+        max_interval=args.max_interval,
     )
 
     out = render_json(result) if args.format == "json" else render_text(result)

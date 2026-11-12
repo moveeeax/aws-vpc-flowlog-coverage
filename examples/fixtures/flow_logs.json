@@ -6,7 +6,9 @@
     "DeliverLogsStatus": "SUCCESS",
     "TrafficType": "ALL",
     "LogDestinationType": "s3",
-    "LogDestination": "arn:aws:s3:::acme-flowlogs/prod-core/"
+    "LogDestination": "arn:aws:s3:::acme-flowlogs/prod-core/",
+    "LogFormat": "${version} ${account-id} ${interface-id} ${srcaddr} ${dstaddr} ${srcport} ${dstport} ${protocol} ${packets} ${bytes} ${start} ${end} ${action} ${log-status} ${vpc-id} ${subnet-id} ${instance-id} ${tcp-flags} ${type} ${pkt-srcaddr} ${pkt-dstaddr} ${flow-direction} ${traffic-path}",
+    "MaxAggregationInterval": 60
   },
   {
     "FlowLogId": "fl-0bbb000000000002",
@@ -16,7 +18,9 @@
     "DeliverLogsErrorMessage": "Access error: the IAM role flowlogs-delivery does not exist or cannot be assumed",
     "TrafficType": "ALL",
     "LogDestinationType": "cloud-watch-logs",
-    "LogDestination": "arn:aws:logs:eu-west-1:111122223333:log-group:/vpc/flowlogs"
+    "LogDestination": "arn:aws:logs:eu-west-1:111122223333:log-group:/vpc/flowlogs",
+    "LogFormat": "${version} ${account-id} ${interface-id} ${srcaddr} ${dstaddr} ${srcport} ${dstport} ${protocol} ${packets} ${bytes} ${start} ${end} ${action} ${log-status}",
+    "MaxAggregationInterval": 600
   },
   {
     "FlowLogId": "fl-0ddd000000000003",
@@ -25,7 +29,9 @@
     "DeliverLogsStatus": "SUCCESS",
     "TrafficType": "ALL",
     "LogDestinationType": "s3",
-    "LogDestination": "arn:aws:s3:::acme-flowlogs/sandbox/"
+    "LogDestination": "arn:aws:s3:::acme-flowlogs/sandbox/",
+    "LogFormat": "${version} ${account-id} ${interface-id} ${srcaddr} ${dstaddr} ${srcport} ${dstport} ${protocol} ${packets} ${bytes} ${start} ${end} ${action} ${log-status}",
+    "MaxAggregationInterval": 600
   },
   {
     "FlowLogId": "fl-0eee000000000004",
@@ -34,7 +40,9 @@
     "DeliverLogsStatus": "SUCCESS",
     "TrafficType": "REJECT",
     "LogDestinationType": "s3",
-    "LogDestination": "arn:aws:s3:::acme-flowlogs/edge/"
+    "LogDestination": "arn:aws:s3:::acme-flowlogs/edge/",
+    "LogFormat": "${version} ${account-id} ${interface-id} ${srcaddr} ${dstaddr} ${srcport} ${dstport} ${protocol} ${packets} ${bytes} ${start} ${end} ${action} ${log-status}",
+    "MaxAggregationInterval": 600
   },
   {
     "FlowLogId": "fl-0fff000000000005",
@@ -43,6 +51,8 @@
     "DeliverLogsStatus": "SUCCESS",
     "TrafficType": "ALL",
     "LogDestinationType": "s3",
-    "LogDestination": "arn:aws:s3:::acme-flowlogs/one-box/"
+    "LogDestination": "arn:aws:s3:::acme-flowlogs/one-box/",
+    "LogFormat": "${version} ${account-id} ${interface-id} ${srcaddr} ${dstaddr} ${srcport} ${dstport} ${protocol} ${packets} ${bytes} ${start} ${end} ${action} ${log-status}",
+    "MaxAggregationInterval": 600
   }
 ]
