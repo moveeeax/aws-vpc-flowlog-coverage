@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+
 import pytest
 
 from aws_vpc_flowlog_coverage.cli import (
@@ -10,10 +12,13 @@ from aws_vpc_flowlog_coverage.cli import (
     EXIT_OK,
     build_parser,
     exit_code,
+    parse_fields,
     parse_regions,
+    required_fields,
 )
 from aws_vpc_flowlog_coverage.models import (
     BROKEN,
+    FORMAT,
     MISSING,
     PARTIAL,
     TRAFFIC_TYPE,
@@ -51,6 +56,12 @@ class TestExitCode:
     def test_fail_on_any_trips_on_traffic_type(self):
         assert exit_code(result_with(TRAFFIC_TYPE), "any") == EXIT_FINDINGS
 
+    def test_fail_on_partial_ignores_format(self):
+        assert exit_code(result_with(FORMAT), "partial") == EXIT_OK
+
+    def test_fail_on_any_trips_on_format(self):
+        assert exit_code(result_with(FORMAT), "any") == EXIT_FINDINGS
+
     def test_fail_on_none_never_trips(self):
         assert exit_code(result_with(MISSING, BROKEN), "none") == EXIT_OK
 
@@ -87,6 +98,64 @@ class TestParser:
         assert args.fail_on == "none"
         assert args.traffic_type == "ALL"
         assert args.concurrency == 8
+        assert args.require_fields == []
+        assert args.format_profile == "none"
+        assert args.max_interval is None
+
+    def test_format_flags(self):
+        args = build_parser().parse_args(
+            [
+                "--require-fields",
+                "pkt-srcaddr,tcp-flags",
+                "--format-profile",
+                "ir",
+                "--max-interval",
+                "60",
+            ]
+        )
+        assert args.require_fields == ["pkt-srcaddr", "tcp-flags"]
+        assert args.format_profile == "ir"
+        assert args.max_interval == 60
+
+    def test_rejects_an_interval_aws_does_not_offer(self):
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["--max-interval", "300"])
+
+    def test_rejects_unknown_format_profile(self):
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["--format-profile", "forensics"])
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("", []),
+            ("tcp-flags", ["tcp-flags"]),
+            ("pkt-srcaddr, pkt-dstaddr,", ["pkt-srcaddr", "pkt-dstaddr"]),
+            ("${pkt-srcaddr} ${tcp-flags}", ["pkt-srcaddr", "tcp-flags"]),
+            ("tcp-flags,tcp-flags", ["tcp-flags"]),
+        ],
+    )
+    def test_parse_fields(self, raw, expected):
+        assert parse_fields(raw) == expected
+
+    @pytest.mark.parametrize("raw", ["tcp_flags", "TcpFlags", "${tcp-flags", "-x"])
+    def test_parse_fields_rejects_malformed_ids(self, raw):
+        with pytest.raises(argparse.ArgumentTypeError):
+            parse_fields(raw)
+
+    def test_required_fields_merges_profile_and_extra(self):
+        assert required_fields("ir", ["tcp-flags", "instance-id"]) == [
+            "vpc-id",
+            "subnet-id",
+            "pkt-srcaddr",
+            "pkt-dstaddr",
+            "tcp-flags",
+            "flow-direction",
+            "instance-id",
+        ]
+
+    def test_required_fields_none_profile(self):
+        assert required_fields("none", ["tcp-flags"]) == ["tcp-flags"]
 
     def test_rejects_unknown_fail_on(self):
         with pytest.raises(SystemExit):

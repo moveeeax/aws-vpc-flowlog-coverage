@@ -7,6 +7,7 @@ prints against an account in that state.
 
     python3 examples/offline_demo.py
     python3 examples/offline_demo.py --format json
+    python3 examples/offline_demo.py --format-profile ir --max-interval 60
 """
 
 import argparse
@@ -17,6 +18,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from aws_vpc_flowlog_coverage.analyze import analyze_region, unattributed_eni_logs
+from aws_vpc_flowlog_coverage.cli import parse_fields, required_fields
 from aws_vpc_flowlog_coverage.models import ScanResult
 from aws_vpc_flowlog_coverage.report import render_json, render_text
 
@@ -31,6 +33,9 @@ def load(name):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--format", choices=("text", "json"), default="text")
+    ap.add_argument("--format-profile", choices=("none", "ir"), default="none")
+    ap.add_argument("--require-fields", type=parse_fields, default=[])
+    ap.add_argument("--max-interval", type=int, choices=(60, 600), default=None)
     args = ap.parse_args()
 
     vpcs = load("vpcs.json")
@@ -38,7 +43,14 @@ def main():
     flow_logs = load("flow_logs.json")
 
     result = ScanResult(regions=[REGION], vpc_count=len(vpcs))
-    result.findings = analyze_region(REGION, vpcs, subnets, flow_logs)
+    result.findings = analyze_region(
+        REGION,
+        vpcs,
+        subnets,
+        flow_logs,
+        required_fields=required_fields(args.format_profile, args.require_fields),
+        max_interval=args.max_interval,
+    )
     result.unattributed_eni_logs = [
         "{0}/{1}".format(REGION, fid) for fid in unattributed_eni_logs(flow_logs)
     ]

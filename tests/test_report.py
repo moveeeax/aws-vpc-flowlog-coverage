@@ -5,9 +5,14 @@ from __future__ import annotations
 import json
 import pathlib
 
-from aws_vpc_flowlog_coverage.analyze import analyze_region, unattributed_eni_logs
+from aws_vpc_flowlog_coverage.analyze import (
+    FORMAT_PROFILES,
+    analyze_region,
+    unattributed_eni_logs,
+)
 from aws_vpc_flowlog_coverage.models import (
     BROKEN,
+    FORMAT,
     MISSING,
     PARTIAL,
     TRAFFIC_TYPE,
@@ -19,12 +24,12 @@ FIXTURES = pathlib.Path(__file__).resolve().parent.parent / "examples" / "fixtur
 REGION = "eu-west-1"
 
 
-def fixture_result():
+def fixture_result(**checks):
     vpcs = json.loads((FIXTURES / "vpcs.json").read_text())
     subnets = json.loads((FIXTURES / "subnets.json").read_text())
     logs = json.loads((FIXTURES / "flow_logs.json").read_text())
     r = ScanResult(regions=[REGION], vpc_count=len(vpcs))
-    r.findings = analyze_region(REGION, vpcs, subnets, logs)
+    r.findings = analyze_region(REGION, vpcs, subnets, logs, **checks)
     r.unattributed_eni_logs = [
         "{0}/{1}".format(REGION, f) for f in unattributed_eni_logs(logs)
     ]
@@ -47,6 +52,48 @@ class TestFixtures:
         assert fixture_result().unattributed_eni_logs == [
             "eu-west-1/fl-0fff000000000005"
         ]
+
+
+def ir_result():
+    return fixture_result(required_fields=FORMAT_PROFILES["ir"], max_interval=60)
+
+
+class TestFormatFixtures:
+    def test_default_format_logs_are_flagged(self):
+        flagged = [f.flow_log_id for f in ir_result().findings if f.kind == FORMAT]
+        assert flagged == ["fl-0ddd000000000003", "fl-0eee000000000004"]
+
+    def test_other_kinds_are_unchanged(self):
+        counts = ir_result().by_kind()
+        assert counts == {
+            MISSING: 1,
+            BROKEN: 1,
+            PARTIAL: 1,
+            TRAFFIC_TYPE: 1,
+            FORMAT: 2,
+        }
+
+    def test_json_carries_missing_fields_and_interval(self):
+        payload = json.loads(render_json(ir_result()))
+        fmt = [f for f in payload["findings"] if f["kind"] == FORMAT][0]
+        assert fmt["flowLogId"] == "fl-0ddd000000000003"
+        assert fmt["missingFields"] == FORMAT_PROFILES["ir"]
+        assert fmt["maxAggregationInterval"] == 600
+        assert payload["summary"]["byKind"][FORMAT] == 2
+
+    def test_interval_key_is_omitted_when_within_limit(self):
+        r = fixture_result(required_fields=["tcp-flags"])
+        payload = json.loads(render_json(r))
+        fmt = [f for f in payload["findings"] if f["kind"] == FORMAT][0]
+        assert fmt["missingFields"] == ["tcp-flags"]
+        assert "maxAggregationInterval" not in fmt
+
+    def test_text_names_the_log_and_the_fields(self):
+        out = render_text(ir_result())
+        assert "FORMAT       vpc-0ee5555555555555e" in out
+        assert "flow log: fl-0eee000000000004" in out
+        assert "log format lacks vpc-id, subnet-id, pkt-srcaddr" in out
+        assert "2 format" in out
 
 
 class TestJson:

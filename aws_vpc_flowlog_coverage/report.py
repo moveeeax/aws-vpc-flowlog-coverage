@@ -6,9 +6,17 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from .models import BROKEN, MISSING, PARTIAL, TRAFFIC_TYPE, ScanResult, sort_findings
+from .models import (
+    BROKEN,
+    FORMAT,
+    MISSING,
+    PARTIAL,
+    TRAFFIC_TYPE,
+    ScanResult,
+    sort_findings,
+)
 
-KIND_ORDER = [MISSING, BROKEN, PARTIAL, TRAFFIC_TYPE]
+KIND_ORDER = [MISSING, BROKEN, PARTIAL, TRAFFIC_TYPE, FORMAT]
 
 
 def to_dict(result: ScanResult, generated_at: str = "") -> Dict[str, Any]:
@@ -64,7 +72,7 @@ def render_text(result: ScanResult) -> str:
                 lines.append(
                     "               dark subnets: " + ", ".join(f.uncovered_subnets)
                 )
-            if f.kind == BROKEN and f.flow_log_id:
+            if f.kind in (BROKEN, FORMAT) and f.flow_log_id:
                 lines.append("               flow log: " + f.flow_log_id)
 
         counts = result.by_kind()
